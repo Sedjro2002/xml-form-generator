@@ -1,0 +1,13 @@
+version: "1"
+services:
+  xmltoform:
+    restart: always
+    image: xmltoform
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 8018:8018
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public

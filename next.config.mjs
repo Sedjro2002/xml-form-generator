@@ -9,6 +9,11 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  experimental: {
+    logging: {
+      level: 'verbose'
+    }
+  }
 }
 
 export default nextConfig

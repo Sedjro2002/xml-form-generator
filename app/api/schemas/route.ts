@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate a unique filename to avoid conflicts
-    var timestamp = Date.now().toString(36) // Use a timestamp for uniqueness
+    // var timestamp = Date.now().toString(36) // Use a timestamp for uniqueness
     const originalName = file.name.replace(/\.(xsd|xml)$/, "")
     const extension = file.name.endsWith(".xsd") ? ".xsd" : ".xml"
     // const filename = `${originalName}_${timestamp}${extension}`

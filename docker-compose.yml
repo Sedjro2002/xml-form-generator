@@ -11,3 +11,38 @@ services:
     volumes:
       - ./src:/app/src
       - ./public:/app/public
+    labels:
+      # - "traefik.enable=true"
+      # - "traefik.http.routers.xmltoform.rule=Host(`xmltoform.docker.localhost`)"
+      # - "traefik.http.routers.xmltoform.entrypoints=websecure"
+      # # Add the following label
+      # - "traefik.http.routers.xmltoform.tls=true"
+      # # Secure Headers Middleware
+      # - "traefik.http.middlewares.secure-headers.headers.frameDeny=true"
+      # - "traefik.http.middlewares.secure-headers.headers.sslRedirect=true"
+      # - "traefik.http.middlewares.secure-headers.headers.browserXssFilter=true"
+      # - "traefik.http.middlewares.secure-headers.headers.contentTypeNosniff=true"
+      # - "traefik.http.middlewares.secure-headers.headers.stsIncludeSubdomains=true"
+      # - "traefik.http.middlewares.secure-headers.headers.stsPreload=true"
+      # - "traefik.http.middlewares.secure-headers.headers.stsSeconds=31536000"
+      # # Apply middlewares to xmltoform router
+      # - "traefik.http.routers.xmltoform.middlewares=secure-headers"
+      # - "traefik.http.routers.xmltoform.tls.certresolver=letsencrypt"
+
+      # - "traefik.http.services.xmltoform.loadbalancer.server.port=8018"
+
+
+      - "traefik.enable=true"
+      - "traefik.http.routers.xmltoform.entrypoints=web"
+      - "traefik.http.routers.xmltoform.rule=Host(`xmltoform.sedjro.com`)"
+      - "traefik.http.middlewares.xmltoform-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.xmltoform.middlewares=xmltoform-https-redirect"
+      - "traefik.http.routers.xmltoform-secure.entrypoints=websecure"
+      - "traefik.http.routers.xmltoform-secure.rule=Host(`xmltoform.sedjro.com`)"
+      - "traefik.http.routers.xmltoform-secure.tls=true"
+      - "traefik.http.routers.xmltoform-secure.tls.certresolver=letsencrypt"
+    networks:
+      - proxy
+networks:
+  proxy:
+    name: proxy

@@ -270,22 +270,28 @@ export function SchemaUploader({ onSchemaParsed, onSchemaNameChange }: SchemaUpl
   }
 
   const saveSchema = async (filename: string, content: string) => {
+    // try {
+    //   const formData = new FormData()
+    //   const file = new File([content], filename, { type: "application/xml" })
+    //   formData.append("file", file)
+    //   formData.append("content", content)
+
+    //   const response = await fetch("/api/schemas", {
+    //     method: "POST",
+    //     body: formData,
+    //   })
+
+    //   if (!response.ok) {
+    //     console.warn("Failed to save schema:", await response.text())
+    //   }
+    // } catch (error) {
+    //   console.warn("Error saving schema:", error)
+    // }
     try {
-      const formData = new FormData()
-      const file = new File([content], filename, { type: "application/xml" })
-      formData.append("file", file)
-      formData.append("content", content)
-
-      const response = await fetch("/api/schemas", {
-        method: "POST",
-        body: formData,
-      })
-
-      if (!response.ok) {
-        console.warn("Failed to save schema:", await response.text())
-      }
+      // Save the schema content in localStorage using the filename as the key
+      localStorage.setItem(`schema:${filename}`, content)
     } catch (error) {
-      console.warn("Error saving schema:", error)
+      console.warn("Error saving schema to localStorage:", error)
     }
   }
 

@@ -60,12 +60,25 @@ export function SchemaSelector({ onSchemaSelected }: SchemaSelectorProps) {
 
   const loadSavedSchemas = async () => {
     try {
-      const response = await fetch("/api/schemas")
-      if (!response.ok) {
-        throw new Error("Failed to load saved schemas")
+      // Get all keys from localStorage that start with "schema:"
+      const schemas: Schema[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && key.startsWith("schema:")) {
+          const content = localStorage.getItem(key) || ""
+          // Try to extract name and size from the key/content
+          const name = key.replace(/^schema:/, "").replace(/\.(xsd|xml)$/, "")
+          const size = content.length
+          const uploadDate = "" // If you want to store uploadDate, save it when uploading
+          schemas.push({
+            filename: key,
+            name,
+            size,
+            uploadDate,
+          })
+        }
       }
-      const data = await response.json()
-      setSavedSchemas(data.schemas || [])
+      setSavedSchemas(schemas)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load schemas")
     } finally {
@@ -316,10 +329,10 @@ export function SchemaSelector({ onSchemaSelected }: SchemaSelectorProps) {
         prev.map((s) =>
           s.filename === schemaToRename.filename
             ? {
-                ...s,
-                filename: data.newFilename,
-                name: data.newFilename.replace(/\.(xsd|xml)$/, ""),
-              }
+              ...s,
+              filename: data.newFilename,
+              name: data.newFilename.replace(/\.(xsd|xml)$/, ""),
+            }
             : s,
         ),
       )

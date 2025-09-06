@@ -248,22 +248,20 @@ export function SchemaSelector({ onSchemaSelected }: SchemaSelectorProps) {
     setError("")
 
     try {
-      const response = await fetch(`/api/schemas/${schema.filename}`)
-      if (!response.ok) {
-        throw new Error("Failed to load schema content")
+      const content = localStorage.getItem(schema.filename)
+      if (!content) {
+      throw new Error("Schema content not found in localStorage")
       }
 
-      const data = await response.json()
-      const parsedSchema = parseXSDSchema(data.content)
-
+      const parsedSchema = parseXSDSchema(content)
       onSchemaSelected(parsedSchema, schema.name)
 
       // Scroll to form section
       setTimeout(() => {
-        const formSection = document.querySelector("[data-form-section]")
-        if (formSection) {
-          formSection.scrollIntoView({ behavior: "smooth", block: "start" })
-        }
+      const formSection = document.querySelector("[data-form-section]")
+      if (formSection) {
+        formSection.scrollIntoView({ behavior: "smooth", block: "start" })
+      }
       }, 100)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load schema")
@@ -277,13 +275,8 @@ export function SchemaSelector({ onSchemaSelected }: SchemaSelectorProps) {
     setError("")
 
     try {
-      const response = await fetch(`/api/schemas/${schema.filename}`, {
-        method: "DELETE",
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to delete schema")
-      }
+      // Remove schema from localStorage
+      localStorage.removeItem(schema.filename)
 
       // Remove the schema from the list
       setSavedSchemas((prev) => prev.filter((s) => s.filename !== schema.filename))
@@ -303,38 +296,38 @@ export function SchemaSelector({ onSchemaSelected }: SchemaSelectorProps) {
     setError("")
 
     try {
-      const response = await fetch("/api/schemas/rename", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          oldFilename: schemaToRename.filename,
-          newFilename: newSchemaName.trim(),
-        }),
-      })
+      const oldFilename = schemaToRename.filename
+      const newFilename =
+      "schema:" +
+      newSchemaName.trim() +
+      (oldFilename.endsWith(".xsd") ? ".xsd" : oldFilename.endsWith(".xml") ? ".xml" : "")
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        if (response.status === 409) {
-          throw new Error(t("schemas.renameExists"))
-        } else {
-          throw new Error(data.error || t("schemas.renameError"))
-        }
+      // Check if new filename already exists
+      if (localStorage.getItem(newFilename)) {
+      throw new Error(t("schemas.renameExists"))
       }
+
+      // Get the content of the old schema
+      const content = localStorage.getItem(oldFilename)
+      if (!content) {
+      throw new Error(t("schemas.renameError"))
+      }
+
+      // Save under new filename and remove old
+      localStorage.setItem(newFilename, content)
+      localStorage.removeItem(oldFilename)
 
       // Update the schema in the list
       setSavedSchemas((prev) =>
-        prev.map((s) =>
-          s.filename === schemaToRename.filename
-            ? {
-              ...s,
-              filename: data.newFilename,
-              name: data.newFilename.replace(/\.(xsd|xml)$/, ""),
-            }
-            : s,
-        ),
+      prev.map((s) =>
+        s.filename === oldFilename
+        ? {
+          ...s,
+          filename: newFilename,
+          name: newSchemaName.trim(),
+          }
+        : s,
+      ),
       )
 
       setShowRenameDialog(false)

@@ -86,6 +86,7 @@ const translations = {
     "xml.copy": "Copy",
     "xml.download": "Download",
     "xml.copied": "XML copied to clipboard!",
+    "xml.generationError": "Failed to generate the XML file",
 
     // Bulk Upload
     "bulk.title": "Bulk Upload for {name}",
@@ -228,6 +229,7 @@ const translations = {
     "xml.copy": "Copier",
     "xml.download": "Télécharger",
     "xml.copied": "XML copié dans le presse-papiers !",
+    "xml.generationError": "Échec de la génération du fichier XML",
 
     // Bulk Upload
     "bulk.title": "Téléchargement en Lot pour {name}",

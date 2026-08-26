@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Upload, FileSpreadsheet, AlertCircle, X } from "lucide-react"
+import { Upload, FileSpreadsheet, AlertCircle } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useLanguage } from "@/contexts/language-context"
+import { parseCsv } from "@/lib/csv"
 
 interface BulkUploadProps {
   element: any
@@ -196,22 +197,22 @@ export function BulkUpload({ element, onDataImported, onClose }: BulkUploadProps
           if (file.name.toLowerCase().endsWith(".csv")) {
             // Parse CSV
             const text = data as string
-            const lines = text.split("\n").filter((line) => line.trim())
-            if (lines.length < 2) {
+            const rows = parseCsv(text).filter((row) => row.some((v) => v.trim() !== ""))
+            if (rows.length < 2) {
               throw new Error(t("bulk.invalidCsvFormat"))
             }
 
-            const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""))
-            const rows = lines.slice(1).map((line) => {
-              const values = line.split(",").map((v) => v.trim().replace(/"/g, ""))
+            const [headerRow, ...dataRows] = rows
+            const headers = headerRow.map((h) => h.trim())
+            const parsedRows = dataRows.map((values) => {
               const row: any = {}
               headers.forEach((header, index) => {
-                row[header] = values[index] || ""
+                row[header] = (values[index] ?? "").trim()
               })
               return row
             })
 
-            resolve(rows)
+            resolve(parsedRows)
           } else {
             // Parse Excel using dynamic import
             const XLSX = await import("xlsx")
@@ -310,14 +311,11 @@ export function BulkUpload({ element, onDataImported, onClose }: BulkUploadProps
 
   return (
     <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col">
-      <CardHeader className="flex flex-row items-center justify-between pb-3 flex-shrink-0">
+      <CardHeader className="pb-3 flex-shrink-0">
         <CardTitle className="flex items-center gap-2 text-lg">
           <FileSpreadsheet className="h-5 w-5" />
           {t("bulk.title", { name: element.name })}
         </CardTitle>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
       </CardHeader>
 
       <CardContent className="flex-1 overflow-hidden">

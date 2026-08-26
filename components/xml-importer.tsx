@@ -121,11 +121,7 @@ export function XmlImporter({ schema, onDataImported, onClearForm, hasFormData }
   }
 
   const getElementTextContent = (element: Element): string => {
-    // Check if content is wrapped in CDATA
-    const cdataMatch = element.textContent?.match(/^\s*<!\[CDATA\[(.*?)\]\]>\s*$/s)
-    if (cdataMatch) {
-      return cdataMatch[1]
-    }
+    // DOMParser already unwraps CDATA sections into textContent.
     return element.textContent?.trim() || ""
   }
 

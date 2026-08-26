@@ -23,23 +23,29 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { BulkUpload } from "@/components/bulk-upload"
 import { ArrayExport } from "@/components/array-export"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import type { JSX } from "react/jsx-runtime"
 import { useLanguage } from "@/contexts/language-context"
 import { XmlImporter } from "@/components/xml-importer"
+import { getValueByPath, setValueByPath } from "@/lib/form-data"
+import { validateFormData } from "@/lib/validation"
+import { generateXml, isCdataEnabled } from "@/lib/xml"
+import type { ElementDef } from "@/lib/xsd-parser"
+import type { CdataSettings, Errors } from "@/lib/types"
 
 interface DynamicFormProps {
-  schema: any
+  schema: ElementDef
   schemaName: string
 }
 
 export function DynamicForm({ schema, schemaName }: DynamicFormProps) {
-  const [formData, setFormData] = useState<any>({})
-  const [errors, setErrors] = useState<any>({})
-  const [isGenerating, setIsGenerating] = useState(false)
+  const [formData, setFormData] = useState<Record<string, any>>({})
+  const [errors, setErrors] = useState<Errors>({})
+  const [generalError, setGeneralError] = useState<string | null>(null)
   const [xmlPreview, setXmlPreview] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   // Track CDATA settings for each field
-  const [cdataSettings, setCdataSettings] = useState<Record<string, boolean>>({})
+  const [cdataSettings, setCdataSettings] = useState<CdataSettings>({})
   // Track bulk upload state
   const [showBulkUpload, setShowBulkUpload] = useState<string | null>(null)
   // Track collapsed state for array sections only
@@ -47,94 +53,8 @@ export function DynamicForm({ schema, schemaName }: DynamicFormProps) {
 
   const { t } = useLanguage()
 
-  const validateField = (value: any, element: any): string | null => {
-    // Handle required fields
-    if (
-      element.required &&
-      (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0))
-    ) {
-      return t("validation.required", { field: element.name })
-    }
-
-    // Skip validation for empty optional fields
-    if ((value === undefined || value === null || value === "") && !element.required) {
-      return null
-    }
-
-    // Validate restrictions
-    if (value && element.restrictions) {
-      const { pattern, minLength, maxLength, fractionDigits, minInclusive, maxInclusive } = element.restrictions
-
-      if (pattern && typeof value === "string") {
-        const regex = new RegExp(pattern)
-        if (!regex.test(value)) {
-          return `${element.name} does not match the required pattern (${pattern})`
-        }
-      }
-
-      if (minLength && typeof value === "string" && value.length < minLength) {
-        return `${element.name} must be at least ${minLength} characters`
-      }
-
-      if (maxLength && typeof value === "string" && value.length > maxLength) {
-        return `${element.name} must be no more than ${maxLength} characters`
-      }
-
-      if (fractionDigits !== undefined && typeof value === "string") {
-        const parts = value.split(".")
-        if (parts.length > 1 && parts[1].length > fractionDigits) {
-          return `${element.name} can have at most ${fractionDigits} decimal places`
-        }
-      }
-
-      if (minInclusive !== undefined && Number(value) < minInclusive) {
-        return `${element.name} must be at least ${minInclusive}`
-      }
-
-      if (maxInclusive !== undefined && Number(value) > maxInclusive) {
-        return `${element.name} must be at most ${maxInclusive}`
-      }
-    }
-
-    // Validate base types
-    if (value && element.baseType) {
-      const strValue = String(value)
-      switch (element.baseType) {
-        case "integer":
-        case "int":
-        case "long":
-        case "short":
-          if (!/^-?\d+$/.test(strValue)) {
-            return `${element.name} must be an integer`
-          }
-          break
-        case "decimal":
-        case "float":
-        case "double":
-          if (!/^-?\d*\.?\d*$/.test(strValue)) {
-            return `${element.name} must be a decimal number`
-          }
-          break
-      }
-    }
-
-    return null
-  }
-
   const updateFormData = (path: string, value: any) => {
-    const newFormData = { ...formData }
-    const pathParts = path.split(".")
-    let current = newFormData
-
-    for (let i = 0; i < pathParts.length - 1; i++) {
-      if (!current[pathParts[i]]) {
-        current[pathParts[i]] = {}
-      }
-      current = current[pathParts[i]]
-    }
-
-    current[pathParts[pathParts.length - 1]] = value
-    setFormData(newFormData)
+    setFormData((prev) => setValueByPath(prev, path, value))
 
     // Clear error for this field
     const newErrors = { ...errors }
@@ -146,10 +66,6 @@ export function DynamicForm({ schema, schemaName }: DynamicFormProps) {
       setXmlPreview(null)
       setShowPreview(false)
     }
-  }
-
-  const getValueByPath = (obj: any, path: string): any => {
-    return path.split(".").reduce((current, key) => current?.[key], obj)
   }
 
   const addArrayItem = (path: string, element: any) => {
@@ -196,160 +112,11 @@ export function DynamicForm({ schema, schemaName }: DynamicFormProps) {
     }
   }
 
-  // Check if CDATA is enabled for a field
-  const isCdataEnabled = (path: string, element: any): boolean => {
-    // If user has explicitly set a preference, use that
-    if (cdataSettings[path] !== undefined) {
-      return cdataSettings[path]
-    }
-    // Otherwise use the default from schema
-    return !!element.useCDATA
-  }
-
-  // Simplified validation that directly checks the form data structure
-  const validateFormData = (): boolean => {
-    const newErrors: any = {}
-    let isValid = true
-
-    const validateElementRecursive = (element: any, dataPath: string, errorPath: string): void => {
-      const value = getValueByPath(formData, dataPath)
-
-      if (element.complexType) {
-        // Validate attributes
-        if (element.attributes) {
-          element.attributes.forEach((attr: any) => {
-            const attrPath = `${dataPath}.@${attr.name}`
-            const attrErrorPath = `${errorPath}.@${attr.name}`
-            const attrValue = getValueByPath(formData, attrPath)
-            const error = validateField(attrValue, attr)
-            if (error) {
-              newErrors[attrErrorPath] = error
-              isValid = false
-            }
-          })
-        }
-
-        // Validate children
-        if (element.children) {
-          element.children.forEach((child: any) => {
-            const childDataPath = `${dataPath}.${child.name}`
-            const childErrorPath = `${errorPath}.${child.name}`
-
-            if (child.multiple) {
-              const arrayValue = getValueByPath(formData, childDataPath) || []
-
-              // Check if required array has items
-              if (child.required && arrayValue.length === 0) {
-                newErrors[childErrorPath] = `At least one ${child.name} is required`
-                isValid = false
-              }
-
-              // Validate each array item
-              arrayValue.forEach((item: any, index: number) => {
-                const itemDataPath = `${childDataPath}.${index}`
-                const itemErrorPath = `${childErrorPath}.${index}`
-                validateElementRecursive(child, itemDataPath, itemErrorPath)
-              })
-            } else {
-              if (child.complexType) {
-                validateElementRecursive(child, childDataPath, childErrorPath)
-              } else {
-                const childValue = getValueByPath(formData, childDataPath)
-                const error = validateField(childValue, child)
-                if (error) {
-                  newErrors[childErrorPath] = error
-                  isValid = false
-                }
-              }
-            }
-          })
-        }
-      } else {
-        // Simple element validation
-        const error = validateField(value, element)
-        if (error) {
-          newErrors[errorPath] = error
-          isValid = false
-        }
-      }
-    }
-
-    // Start validation from the root element
-    validateElementRecursive(schema, schema.name, schema.name)
-
-    setErrors(newErrors)
-    return isValid
-  }
-
-  // Update the generateXML function to use CDATA based on user settings
-  const generateXML = (element: any, data: any, depth = 0, path = ""): string => {
-    const indent = "  ".repeat(depth)
-    const currentPath = path ? path : element.name
-
-    if (element.complexType) {
-      let xml = `${indent}<${element.name}`
-
-      // Add attributes
-      if (element.attributes) {
-        element.attributes.forEach((attr: any) => {
-          const attrValue = data?.[`@${attr.name}`]
-          if (attrValue !== undefined && attrValue !== "") {
-            xml += ` ${attr.name}="${attrValue}"`
-          }
-        })
-      }
-
-      xml += ">\n"
-
-      // Add child elements
-      if (element.children) {
-        element.children.forEach((child: any) => {
-          const childPath = `${currentPath}.${child.name}`
-
-          if (child.multiple) {
-            const arrayValue = data?.[child.name] || []
-            arrayValue.forEach((item: any, index: number) => {
-              xml += generateXML(child, item, depth + 1, `${childPath}.${index}`)
-            })
-          } else {
-            const childValue = data?.[child.name]
-            if (childValue !== undefined && childValue !== "") {
-              if (child.complexType) {
-                xml += generateXML(child, childValue, depth + 1, childPath)
-              } else {
-                // Check if this element should use CDATA based on user settings
-                const useCdata = isCdataEnabled(childPath, child)
-                if (useCdata) {
-                  xml += `${indent}  <${child.name}><![CDATA[${childValue}]]></${child.name}>\n`
-                } else {
-                  xml += `${indent}  <${child.name}>${childValue}</${child.name}>\n`
-                }
-              }
-            }
-          }
-        })
-      }
-
-      xml += `${indent}</${element.name}>\n`
-      return xml
-    } else {
-      // Simple element
-      const textValue = data || ""
-
-      // Check if this element should use CDATA based on user settings
-      const useCdata = isCdataEnabled(currentPath, element)
-      if (useCdata) {
-        return `${indent}<${element.name}><![CDATA[${textValue}]]></${element.name}>\n`
-      } else {
-        return `${indent}<${element.name}>${textValue}</${element.name}>\n`
-      }
-    }
-  }
-
   // Add this function to handle imported data:
   const handleXmlImport = (importedData: any) => {
     setFormData(importedData)
     setErrors({}) // Clear any existing errors
+    setGeneralError(null)
     // Clear XML preview when new data is imported
     if (xmlPreview) {
       setXmlPreview(null)
@@ -361,6 +128,7 @@ export function DynamicForm({ schema, schemaName }: DynamicFormProps) {
   const handleClearForm = () => {
     setFormData({})
     setErrors({})
+    setGeneralError(null)
     setCdataSettings({})
     if (xmlPreview) {
       setXmlPreview(null)
@@ -376,35 +144,26 @@ export function DynamicForm({ schema, schemaName }: DynamicFormProps) {
     )
   }
 
-  // Add debug logging to help diagnose CDATA issues
   const handleSubmit = () => {
     setErrors({})
-    setIsGenerating(true)
+    setGeneralError(null)
 
-    setTimeout(() => {
-      console.log("Current form data:", formData)
-      console.log("Schema:", schema)
-      console.log("CDATA settings:", cdataSettings)
+    const { errors: newErrors, isValid } = validateFormData(schema, formData, t)
+    setErrors(newErrors)
 
-      if (validateFormData()) {
-        try {
-          const rootData = formData[schema.name] || {}
-          const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>\n${generateXML(schema, rootData, 0, schema.name)}`
+    if (!isValid) return
 
-          console.log("Generated XML:", xmlContent)
+    try {
+      const rootData = formData[schema.name] || {}
+      const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>\n${generateXml(schema, rootData, cdataSettings, 0, schema.name)}`
 
-          // Set XML preview and show it
-          setXmlPreview(xmlContent)
-          setShowPreview(true)
-        } catch (error) {
-          console.error("XML generation error:", error)
-          setErrors({ general: "Failed to generate XML file" })
-        }
-      } else {
-        console.log("Validation failed. Errors:", errors)
-      }
-      setIsGenerating(false)
-    }, 100) // Reduced timeout for faster feedback
+      // Set XML preview and show it
+      setXmlPreview(xmlContent)
+      setShowPreview(true)
+    } catch (error) {
+      console.error("XML generation error:", error)
+      setGeneralError(t("xml.generationError"))
+    }
   }
 
   const downloadXml = () => {
@@ -575,7 +334,7 @@ export function DynamicForm({ schema, schemaName }: DynamicFormProps) {
       const isTextarea = element.baseType === "string" && !element.restrictions?.pattern && inputType === "text"
       const isStringType = element.baseType === "string" || !element.baseType || inputType === "text"
       const canUseCdata = isStringType // Only string-like fields can use CDATA
-      const useCdata = isCdataEnabled(currentPath, element)
+      const useCdata = isCdataEnabled(currentPath, element, cdataSettings)
 
       return (
         <div key={currentPath} className="space-y-2">
@@ -631,6 +390,17 @@ export function DynamicForm({ schema, schemaName }: DynamicFormProps) {
     }
   }
 
+  const bulkElement: ElementDef | undefined = showBulkUpload
+    ? (() => {
+        const pathParts = showBulkUpload.split(".")
+        let current: ElementDef | undefined = schema
+        for (let i = 1; i < pathParts.length; i++) {
+          current = current?.children?.find((child) => child.name === pathParts[i])
+        }
+        return current
+      })()
+    : undefined
+
   return (
     <div className="space-y-6" data-form-section>
       <XmlImporter
@@ -645,35 +415,26 @@ export function DynamicForm({ schema, schemaName }: DynamicFormProps) {
       <Separator />
 
       <div className="flex justify-end space-x-4">
-        <Button onClick={handleSubmit} disabled={isGenerating} className="min-w-[150px]">
-          {isGenerating ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-              {t("form.generating")}
-            </>
-          ) : (
-            <>
-              <Eye className="h-4 w-4 mr-2" />
-              {t("form.generateXml")}
-            </>
-          )}
+        <Button onClick={handleSubmit} className="min-w-[150px]">
+          <Eye className="h-4 w-4 mr-2" />
+          {t("form.generateXml")}
         </Button>
       </div>
 
-      {errors.general && (
+      {generalError && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{errors.general}</AlertDescription>
+          <AlertDescription>{generalError}</AlertDescription>
         </Alert>
       )}
 
-      {Object.keys(errors).length > 0 && !errors.general && (
+      {Object.keys(errors).length > 0 && !generalError && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            Please fix the validation errors above before generating the XML file.
+            {t("form.fixErrors")}
             <details className="mt-2">
-              <summary className="cursor-pointer text-sm">Debug Info</summary>
+              <summary className="cursor-pointer text-sm">{t("form.debugInfo")}</summary>
               <pre className="text-xs mt-1 bg-gray-100 p-2 rounded">{JSON.stringify(errors, null, 2)}</pre>
             </details>
           </AlertDescription>
@@ -711,27 +472,17 @@ export function DynamicForm({ schema, schemaName }: DynamicFormProps) {
       )}
 
       {/* Bulk Upload Modal */}
-      {showBulkUpload && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <BulkUpload
-            element={(() => {
-              // Find the element for the current bulk upload path
-              const pathParts = showBulkUpload.split(".")
-              let currentElement = schema
-
-              for (let i = 1; i < pathParts.length; i++) {
-                const part = pathParts[i]
-                if (currentElement.children) {
-                  currentElement = currentElement.children.find((child: any) => child.name === part)
-                }
-              }
-
-              return currentElement
-            })()}
-            onDataImported={(data, cdataColumns) => handleBulkImport(showBulkUpload, data, cdataColumns)}
-            onClose={() => setShowBulkUpload(null)}
-          />
-        </div>
+      {showBulkUpload && bulkElement && (
+        <Dialog open={showBulkUpload !== null} onOpenChange={(open) => !open && setShowBulkUpload(null)}>
+          <DialogContent className="max-w-4xl p-0 overflow-hidden">
+            <DialogTitle className="sr-only">{t("bulk.title", { name: bulkElement.name })}</DialogTitle>
+            <BulkUpload
+              element={bulkElement}
+              onDataImported={(data, cdataColumns) => handleBulkImport(showBulkUpload, data, cdataColumns)}
+              onClose={() => setShowBulkUpload(null)}
+            />
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   )
